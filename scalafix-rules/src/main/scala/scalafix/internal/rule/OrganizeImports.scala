@@ -1,6 +1,7 @@
 package scalafix.internal.rule
 
 import scala.collection.mutable
+import scala.language.higherKinds
 import scala.meta._
 import scala.meta.tokens.Token._
 
@@ -21,7 +22,7 @@ object OrganizeImportsConfig {
 }
 
 final class OrganizeImports(config: OrganizeImportsConfig)
-    extends SyntacticRule("OrganizeImports") {
+    extends SemanticRule("OrganizeImports") {
 
   // DESNOTE(2018-11-28, pjrt): Needed for the testing framework to work.
   // This is a smell.
@@ -31,7 +32,7 @@ final class OrganizeImports(config: OrganizeImportsConfig)
     "Sorts and organizes imports into a pattern"
   override def isRewrite: Boolean = true
 
-  override def fix(implicit doc: SyntacticDocument): Patch = {
+  override def fix(implicit doc: SemanticDocument): Patch = {
 
     type Acc[F[_]] = F[(Import, Importer)]
     val (fAcc, acc): (mutable.ListBuffer[Acc[List]], Acc[mutable.ListBuffer]) =
@@ -68,10 +69,24 @@ final class OrganizeImports(config: OrganizeImportsConfig)
       else {
         val (positions, rms) =
           toRemove.flatMap(_.tokens.map(s => s -> Patch.removeToken(s))).unzip
-        val sortedStr = replaceWithSorted(decopImps, config.importGroups)
+        val qualifedImports =
+          decopImps.map(i => Importer(qualifyRef(i.ref), i.importees))
+        val sortedStr = replaceWithSorted(qualifedImports, config.importGroups)
         rms :+ Patch.addRight(positions.head, sortedStr)
       }
     }.asPatch
+  }
+
+  private def qualifyRef(ref: Term.Ref)(
+      implicit doc: SemanticDocument): Term.Ref = {
+
+    ref.symbol.toString.split('/').toList match {
+      case Nil => throw new IllegalStateException("Empty Import Referenceb")
+      case h :: t =>
+        t.foldLeft(Term.Name(h): Term.Ref) {
+          case (acc, x) => Term.Select(acc, Term.Name(x))
+        }
+    }
   }
 
   private def isPartOfImport(tree: Tree): Boolean =

@@ -8,6 +8,6 @@ OrganizeImports.importGroups = []
 
 import scala.collection._, mutable._
 import java.time
-import scala.util.{ Success, Failure}
+import scala.util.{ Success, Failure }
 
 final class OrganizeImportsTest {}
