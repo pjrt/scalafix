@@ -63,30 +63,35 @@ final class OrganizeImports(config: OrganizeImportsConfig)
     // may be an import (which would mean we never ad the last group to fAcc.
     addIfNotEmpty
 
-    fAcc.toList.flatMap { d =>
+    val (rms, imports) = fAcc.toList.flatMap { d =>
       val (toRemove, decopImps) = d.unzip
       if (decopImps.isEmpty) Nil
       else {
-        val (positions, rms) =
-          toRemove.flatMap(_.tokens.map(s => s -> Patch.removeToken(s))).unzip
-        val qualifedImports =
-          decopImps.map(i => Importer(qualifyRef(i.ref), i.importees))
-        val sortedStr = replaceWithSorted(qualifedImports, config.importGroups)
-        rms :+ Patch.addRight(positions.head, sortedStr)
+        List(toRemove -> decopImps.map(qualifyImport))
+        // val sortedStr = replaceWithSorted(qualifedImports, config.importGroups)
+        // rms :+ Patch.addRight(positions.head, sortedStr)
       }
-    }.asPatch
+    }.unzip
+
+    val newImports = replaceWithSorted(imports.flatten, config.importGroups)
+    val (positions, rmsPatches) =
+      rms.flatten.flatMap(_.tokens.map(s => s -> Patch.removeToken(s))).unzip
+    (rmsPatches :+ Patch.addRight(positions.head, newImports)).asPatch
   }
 
-  private def qualifyRef(ref: Term.Ref)(
-      implicit doc: SemanticDocument): Term.Ref = {
+  private def qualifyImport(imp: Importer)(
+      implicit doc: SemanticDocument): Importer = {
 
-    ref.symbol.toString.split('/').toList match {
-      case Nil => throw new IllegalStateException("Empty Import Referenceb")
-      case h :: t =>
-        t.foldLeft(Term.Name(h): Term.Ref) {
-          case (acc, x) => Term.Select(acc, Term.Name(x))
-        }
-    }
+    val qualifiedTerm =
+      imp.ref.symbol.toString.split('/').toList match {
+        case Nil => throw new IllegalStateException("Empty Import Reference")
+        case h :: t =>
+          t.foldLeft(Term.Name(h): Term.Ref) {
+            case (acc, x) => Term.Select(acc, Term.Name(x))
+          }
+      }
+
+    Importer(qualifiedTerm, imp.importees)
   }
 
   private def isPartOfImport(tree: Tree): Boolean =
